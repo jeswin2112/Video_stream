@@ -27,44 +27,41 @@ const uploadFilesFromDirToS3 = async (dir, prefix) => {
     return `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${prefix}/output.m3u8`;
 };
 
-export const uploadVideo = async (file, title, description) => {
-    const videoId = uuidv4();
-    const s3KeyOriginal = `videos/${videoId}/original-${file.originalname}`;
-
-    // 1. Extract frame & check for sensitive content
+const checkSensitiveContent = async (videoId, filePath) => {
     const framePath = path.join(__dirname, `../../temp/${videoId}-frame.jpg`);
-    await ffmpegService.extractFrame(file.path, framePath);
-    const frameBuffer = await fs.readFile(framePath);
-
-    const isSensitive = await awsService.checkSensitiveContent(frameBuffer);
-    await fs.unlink(framePath); // Clean up frame immediately using fs/promises
-
-    if (isSensitive) {
-        await fs.unlink(file.path);
-        throw new Error('Sensitive content detected. Video upload rejected.');
-    }
-
-    // 2. Upload original MP4 to S3
-    const originalUrl = await awsService.uploadToS3(file.path, s3KeyOriginal);
-
-    // 3. Transcode to HLS & upload segments to S3
-    const hlsDir = path.join(__dirname, `../../temp/${videoId}_hls`);
-    await ffmpegService.transcodeToHLS(file.path, hlsDir);
-    const hlsUrl = await uploadFilesFromDirToS3(hlsDir, `videos/${videoId}/hls`);
-
-    // 4. Configure Cloudflare Streaming
-    let cloudflareId = null;
     try {
-        cloudflareId = await configureCloudflareStream(originalUrl);
+        await ffmpegService.extractFrame(filePath, framePath);
+        const frameBuffer = await fs.readFile(framePath);
+        const isSensitive = await awsService.checkSensitiveContent(frameBuffer);
+        
+        if (isSensitive) {
+            throw new Error('Sensitive content detected. Video upload rejected.');
+        }
+    } finally {
+        await fs.unlink(framePath).catch(() => {});
+    }
+};
+
+const processHLS = async (videoId, filePath) => {
+    const hlsDir = path.join(__dirname, `../../temp/${videoId}_hls`);
+    try {
+        await ffmpegService.transcodeToHLS(filePath, hlsDir);
+        return await uploadFilesFromDirToS3(hlsDir, `videos/${videoId}/hls`);
+    } finally {
+        await fs.rm(hlsDir, { recursive: true, force: true }).catch(() => {});
+    }
+};
+
+const setupCloudflareStream = async (originalUrl) => {
+    try {
+        return await configureCloudflareStream(originalUrl);
     } catch (err) {
         console.warn('Cloudflare setup failed, falling back to S3 HLS:', err.message);
+        return null;
     }
+};
 
-    // Cleanup local files
-    await fs.rm(hlsDir, { recursive: true, force: true });
-    await fs.unlink(file.path);
-
-    // 5. Save to DB
+const saveVideoMetadata = async (videoId, title, description, originalUrl, hlsUrl, cloudflareId) => {
     const sql = `
     INSERT INTO videos (id, title, description, original_url, hls_url, cloudflare_id)
     VALUES ($1, $2, $3, $4, $5, $6)
@@ -72,8 +69,41 @@ export const uploadVideo = async (file, title, description) => {
   `;
     const values = [videoId, title, description, originalUrl, hlsUrl, cloudflareId];
     const { rows } = await query(sql, values);
-
     return rows[0];
+};
+
+export const uploadVideo = async (file, title, description) => {
+    const videoId = uuidv4();
+    
+    try {
+        // 1. Extract frame & check for sensitive content
+        await checkSensitiveContent(videoId, file.path);
+
+        // 2. Upload original MP4 to S3
+        const s3KeyOriginal = `videos/${videoId}/original-${file.originalname}`;
+        const originalUrl = await awsService.uploadToS3(file.path, s3KeyOriginal);
+
+        // 3. Transcode to HLS & upload segments to S3
+        const hlsUrl = await processHLS(videoId, file.path);
+
+        // 4. Configure Cloudflare Streaming
+        const cloudflareId = await setupCloudflareStream(originalUrl);
+
+        // 5. Save to DB
+        return await saveVideoMetadata(
+            videoId, 
+            title, 
+            description, 
+            originalUrl, 
+            hlsUrl, 
+            cloudflareId
+        );
+    } finally {
+        // Cleanup local uploaded file
+        if (file && file.path) {
+            await fs.unlink(file.path).catch(err => console.warn('Failed to clean up original file:', err.message));
+        }
+    }
 };
 
 export const getVideos = async () => {
