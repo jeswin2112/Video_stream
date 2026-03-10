@@ -1,26 +1,26 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { RekognitionClient, DetectModerationLabelsCommand } from '@aws-sdk/client-rekognition';
-import fs from 'fs';
+import { AWS, S3_BASE_URL } from '../constants/env.constants.js';
 
 const s3 = new S3Client({
-    region: process.env.AWS_REGION,
+    region: AWS.REGION,
     credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+        accessKeyId: AWS.ACCESS_KEY_ID,
+        secretAccessKey: AWS.SECRET_ACCESS_KEY
     }
 });
 
-const rekognition = new RekognitionClient({ region: process.env.AWS_REGION });
+const rekognition = new RekognitionClient({ region: AWS.REGION });
 
-export const uploadToS3 = async (filePath, key) => {
-    const fileStream = fs.createReadStream(filePath);
+export const uploadToS3 = async (fileBuffer, key, mimetype = 'application/octet-stream') => {
     const command = new PutObjectCommand({
-        Bucket: process.env.AWS_S3_BUCKET,
+        Bucket: AWS.S3_BUCKET,
         Key: key,
-        Body: fileStream,
+        Body: fileBuffer,
+        ContentType: mimetype,
     });
     await s3.send(command);
-    return `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
+    return `${S3_BASE_URL}/${key}`;
 };
 
 export const checkSensitiveContent = async (imageBuffer) => {

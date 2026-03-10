@@ -1,11 +1,10 @@
 import pg from 'pg';
-import dotenv from 'dotenv';
-dotenv.config();
+import { DB } from '../constants/env.constants.js';
 
 const { Pool } = pg;
 
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString: DB.URL,
 });
 
 pool.on('error', (err) => {
