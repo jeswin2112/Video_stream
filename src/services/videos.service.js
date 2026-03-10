@@ -33,12 +33,12 @@ const checkSensitiveContent = async (videoId, filePath) => {
         await ffmpegService.extractFrame(filePath, framePath);
         const frameBuffer = await fs.readFile(framePath);
         const isSensitive = await awsService.checkSensitiveContent(frameBuffer);
-        
+
         if (isSensitive) {
             throw new Error('Sensitive content detected. Video upload rejected.');
         }
     } finally {
-        await fs.unlink(framePath).catch(() => {});
+        await fs.unlink(framePath).catch(() => { });
     }
 };
 
@@ -48,7 +48,7 @@ const processHLS = async (videoId, filePath) => {
         await ffmpegService.transcodeToHLS(filePath, hlsDir);
         return await uploadFilesFromDirToS3(hlsDir, `videos/${videoId}/hls`);
     } finally {
-        await fs.rm(hlsDir, { recursive: true, force: true }).catch(() => {});
+        await fs.rm(hlsDir, { recursive: true, force: true }).catch(() => { });
     }
 };
 
@@ -74,7 +74,7 @@ const saveVideoMetadata = async (videoId, title, description, originalUrl, hlsUr
 
 export const uploadVideo = async (file, title, description) => {
     const videoId = uuidv4();
-    
+
     try {
         // 1. Extract frame & check for sensitive content
         await checkSensitiveContent(videoId, file.path);
@@ -91,11 +91,11 @@ export const uploadVideo = async (file, title, description) => {
 
         // 5. Save to DB
         return await saveVideoMetadata(
-            videoId, 
-            title, 
-            description, 
-            originalUrl, 
-            hlsUrl, 
+            videoId,
+            title,
+            description,
+            originalUrl,
+            hlsUrl,
             cloudflareId
         );
     } finally {
