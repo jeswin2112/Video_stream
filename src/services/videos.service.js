@@ -65,13 +65,13 @@ const setupCloudflareStream = async (originalUrl) => {
     }
 };
 
-const saveVideoMetadata = async (videoId, title, description, originalUrl, hlsUrl, cloudflareId) => {
+const saveVideoMetadata = async (videoId, title, description, originalUrl, hlsUrl, cloudflareId, thumbnailUrl) => {
     const sql = `
-    INSERT INTO videos (id, title, description, original_url, hls_url, cloudflare_id)
-    VALUES ($1, $2, $3, $4, $5, $6)
+    INSERT INTO videos (id, title, description, original_url, hls_url, cloudflare_id, thumbnail_url)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
     RETURNING *;
   `;
-    const values = [videoId, title, description, originalUrl, hlsUrl, cloudflareId];
+    const values = [videoId, title, description, originalUrl, hlsUrl, cloudflareId, thumbnailUrl];
     const { rows } = await query(sql, values);
     return rows[0];
 };
@@ -79,6 +79,7 @@ const saveVideoMetadata = async (videoId, title, description, originalUrl, hlsUr
 export const uploadVideo = async (file, title, description) => {
     const videoId = uuidv4();
     const tempVideoPath = path.join(__dirname, `../../temp/${videoId}-original.mp4`);
+    const tempThumbnailPath = path.join(__dirname, `../../temp/${videoId}-thumb.jpg`);
 
     try {
         console.log(`Writing temp video file to: ${tempVideoPath}`);
@@ -89,37 +90,56 @@ export const uploadVideo = async (file, title, description) => {
         console.log(`Checking sensitive content for: ${tempVideoPath}`);
         await checkSensitiveContent(videoId, tempVideoPath);
 
-        // 2. Upload original MP4 to S3 directly from Memory
+        // 2. Extract Thumbnail
+        console.log(`Extracting thumbnail for: ${tempVideoPath}`);
+        await ffmpegService.extractFrame(tempVideoPath, tempThumbnailPath);
+        const thumbBuffer = await fs.readFile(tempThumbnailPath);
+        const thumbnailUrl = await awsService.uploadToS3(thumbBuffer, `videos/${videoId}/thumbnail.jpg`, 'image/jpeg');
+
+        // 3. Upload original MP4 to S3 directly from Memory
         const s3KeyOriginal = `videos/${videoId}/original-${file.originalname}`;
         const originalUrl = await awsService.uploadToS3(file.buffer, s3KeyOriginal, file.mimetype);
 
-        // 3. Transcode to HLS & upload segments to S3
+        // 4. Transcode to HLS & upload segments to S3
         console.log(`Processing HLS for: ${tempVideoPath}`);
         const hlsUrl = await processHLS(videoId, tempVideoPath);
 
-        // 4. Configure Cloudflare Streaming
+        // 5. Configure Cloudflare Streaming
         const cloudflareId = await setupCloudflareStream(originalUrl);
 
-        // 5. Save to DB
+        // 6. Save to DB
         return await saveVideoMetadata(
             videoId,
             title,
             description,
             originalUrl,
             hlsUrl,
-            cloudflareId
+            cloudflareId,
+            thumbnailUrl
         );
     } finally {
-        await fs.unlink(tempVideoPath).catch(() => { });
+        await Promise.all([
+            fs.unlink(tempVideoPath).catch(() => { }),
+            fs.unlink(tempThumbnailPath).catch(() => { })
+        ]);
     }
+};
+
+const mapVideoResponse = (video) => {
+    if (!video) return null;
+    return {
+        ...video,
+        thumbnail: video.thumbnail_url,
+        streamUrl: video.original_url || video.hls_url
+    };
 };
 
 export const getVideos = async () => {
     const { rows } = await query('SELECT * FROM videos WHERE deleted_at IS NULL ORDER BY created_at DESC;');
-    return rows;
+    return rows.map(mapVideoResponse);
 };
 
 export const getVideoById = async (id) => {
     const { rows } = await query('SELECT * FROM videos WHERE id = $1 AND deleted_at IS NULL;', [id]);
-    return rows[0];
+    return mapVideoResponse(rows[0]);
 };
