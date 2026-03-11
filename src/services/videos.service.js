@@ -38,7 +38,7 @@ const checkSensitiveContent = async (videoId, videoPath) => {
         const isSensitive = await awsService.checkSensitiveContent(frameBuffer);
 
         if (isSensitive) {
-            throw new Error('sensitive content dteected video canot be uploaded');
+            throw new Error('sensitive content detected video cannot be uploaded');
         }
     } finally {
         await fs.unlink(framePath).catch(() => { });
