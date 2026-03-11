@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { RekognitionClient, DetectModerationLabelsCommand } from '@aws-sdk/client-rekognition';
 import { AWS, S3_BASE_URL } from '../constants/env.constants.js';
 
@@ -34,5 +34,24 @@ export const checkSensitiveContent = async (imageBuffer) => {
     } catch (error) {
         console.error('AWS Rekognition error:', error);
         return false; // Default to passing on API errors, depending on strictness needs
+    }
+};
+
+
+
+export const deleteFileFromS3Url = async (fileUrl) => {
+    try {
+        const url = new URL(fileUrl);
+        const key = url.pathname.substring(1);
+        const bucket = url.hostname.split(".")[0];
+
+        await s3.send(new DeleteObjectCommand({
+            Bucket: bucket,
+            Key: key
+        }));
+        return true;
+    } catch (error) {
+        console.error('AWS Rekognition error:', error);
+        return false;
     }
 };

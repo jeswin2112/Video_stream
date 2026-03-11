@@ -1,4 +1,5 @@
 import * as videosService from '../services/videos.service.js';
+import * as awsService from '../services/aws.service.js';
 
 export const uploadVideo = async (req, res) => {
     try {
@@ -41,6 +42,7 @@ export const deleteVideo = async (req, res) => {
         if (!success) {
             return res.status(404).json({ error: 'Video not found or already deleted' });
         }
+        await awsService.deleteFromS3();
         res.status(200).json({ message: 'Video deleted successfully' });
     } catch (error) {
         res.status(500).json({ error: 'Failed to delete video' });
