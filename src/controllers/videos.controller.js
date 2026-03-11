@@ -34,3 +34,16 @@ export const getVideoById = async (req, res) => {
         res.status(500).json({ error: 'Failed to fetch video details' });
     }
 };
+
+export const deleteVideo = async (req, res) => {
+    try {
+        const success = await videosService.deleteVideo(req.params.id);
+        if (!success) {
+            return res.status(404).json({ error: 'Video not found or already deleted' });
+        }
+        res.status(200).json({ message: 'Video deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to delete video' });
+    }
+};
+

@@ -143,3 +143,12 @@ export const getVideoById = async (id) => {
     const { rows } = await query('SELECT * FROM videos WHERE id = $1 AND deleted_at IS NULL;', [id]);
     return mapVideoResponse(rows[0]);
 };
+
+export const deleteVideo = async (id) => {
+    const { rowCount } = await query(
+        'UPDATE videos SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL;',
+        [id]
+    );
+    return rowCount > 0;
+};
+
