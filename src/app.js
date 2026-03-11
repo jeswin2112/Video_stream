@@ -17,6 +17,9 @@ app.use('/videos', videosRoutes);
 
 app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
 
-app.listen(APP.PORT, () => {
+const server = app.listen(APP.PORT, () => {
     console.log(`Server started on port ${APP.PORT}`);
 });
+
+server.timeout = 900000; // 15 minutes for long-running transcoding
+

@@ -3,10 +3,10 @@ import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 
-export const extractFrame = async (videoStream, outputPath) => {
+export const extractFrame = async (videoSource, outputPath) => {
     // Wrap event-based fluent-ffmpeg API in Promise to allow awaiting
     await new Promise((resolve, reject) => {
-        ffmpeg(videoStream)
+        ffmpeg(videoSource)
             .screenshots({
                 timestamps: ['00:00:01.000'],
                 filename: path.basename(outputPath),
@@ -18,14 +18,14 @@ export const extractFrame = async (videoStream, outputPath) => {
     return outputPath;
 };
 
-export const transcodeToHLS = async (videoStream, outputDir) => {
+export const transcodeToHLS = async (videoSource, outputDir) => {
     if (!existsSync(outputDir)) {
         await fs.mkdir(outputDir, { recursive: true });
     }
     const outputPath = path.join(outputDir, 'output.m3u8');
 
     await new Promise((resolve, reject) => {
-        ffmpeg(videoStream)
+        ffmpeg(videoSource)
             .outputOptions([
                 '-profile:v baseline',
                 '-level 3.0',

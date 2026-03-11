@@ -3,7 +3,6 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
-import { Readable } from 'stream';
 import { query } from '../database/database.connection.js';
 import * as awsService from './aws.service.js';
 import * as ffmpegService from './ffmpeg.service.js';
@@ -30,12 +29,11 @@ const uploadFilesFromDirToS3 = async (dir, prefix) => {
     return `${S3_BASE_URL}/${prefix}/output.m3u8`;
 };
 
-const checkSensitiveContent = async (videoId, fileBuffer) => {
+const checkSensitiveContent = async (videoId, videoPath) => {
     const framePath = path.join(__dirname, `../../temp/${videoId}-frame.jpg`);
-    const fileStream = Readable.from(fileBuffer);
 
     try {
-        await ffmpegService.extractFrame(fileStream, framePath);
+        await ffmpegService.extractFrame(videoPath, framePath);
         const frameBuffer = await fs.readFile(framePath);
         const isSensitive = await awsService.checkSensitiveContent(frameBuffer);
 
@@ -47,12 +45,11 @@ const checkSensitiveContent = async (videoId, fileBuffer) => {
     }
 };
 
-const processHLS = async (videoId, fileBuffer) => {
+const processHLS = async (videoId, videoPath) => {
     const hlsDir = path.join(__dirname, `../../temp/${videoId}_hls`);
-    const fileStream = Readable.from(fileBuffer);
 
     try {
-        await ffmpegService.transcodeToHLS(fileStream, hlsDir);
+        await ffmpegService.transcodeToHLS(videoPath, hlsDir);
         return await uploadFilesFromDirToS3(hlsDir, `videos/${videoId}/hls`);
     } finally {
         await fs.rm(hlsDir, { recursive: true, force: true }).catch(() => { });
@@ -81,29 +78,40 @@ const saveVideoMetadata = async (videoId, title, description, originalUrl, hlsUr
 
 export const uploadVideo = async (file, title, description) => {
     const videoId = uuidv4();
+    const tempVideoPath = path.join(__dirname, `../../temp/${videoId}-original.mp4`);
 
-    // 1. Extract frame & check for sensitive content
-    await checkSensitiveContent(videoId, file.buffer);
+    try {
+        console.log(`Writing temp video file to: ${tempVideoPath}`);
+        await fs.writeFile(tempVideoPath, file.buffer);
+        console.log(`Temp video file written, size: ${file.buffer.length} bytes`);
 
-    // 2. Upload original MP4 to S3 directly from Memory
-    const s3KeyOriginal = `videos/${videoId}/original-${file.originalname}`;
-    const originalUrl = await awsService.uploadToS3(file.buffer, s3KeyOriginal, file.mimetype);
+        // 1. Extract frame & check for sensitive content
+        console.log(`Checking sensitive content for: ${tempVideoPath}`);
+        await checkSensitiveContent(videoId, tempVideoPath);
 
-    // 3. Transcode to HLS & upload segments to S3
-    const hlsUrl = await processHLS(videoId, file.buffer);
+        // 2. Upload original MP4 to S3 directly from Memory
+        const s3KeyOriginal = `videos/${videoId}/original-${file.originalname}`;
+        const originalUrl = await awsService.uploadToS3(file.buffer, s3KeyOriginal, file.mimetype);
 
-    // 4. Configure Cloudflare Streaming
-    const cloudflareId = await setupCloudflareStream(originalUrl);
+        // 3. Transcode to HLS & upload segments to S3
+        console.log(`Processing HLS for: ${tempVideoPath}`);
+        const hlsUrl = await processHLS(videoId, tempVideoPath);
 
-    // 5. Save to DB
-    return await saveVideoMetadata(
-        videoId,
-        title,
-        description,
-        originalUrl,
-        hlsUrl,
-        cloudflareId
-    );
+        // 4. Configure Cloudflare Streaming
+        const cloudflareId = await setupCloudflareStream(originalUrl);
+
+        // 5. Save to DB
+        return await saveVideoMetadata(
+            videoId,
+            title,
+            description,
+            originalUrl,
+            hlsUrl,
+            cloudflareId
+        );
+    } finally {
+        await fs.unlink(tempVideoPath).catch(() => { });
+    }
 };
 
 export const getVideos = async () => {
