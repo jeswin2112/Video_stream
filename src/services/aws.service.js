@@ -38,20 +38,13 @@ export const checkSensitiveContent = async (imageBuffer) => {
 };
 
 
-
-export const deleteFileFromS3Url = async (fileUrl) => {
-    try {
-        const url = new URL(fileUrl);
-        const key = url.pathname.substring(1);
-        const bucket = url.hostname.split(".")[0];
-
-        await s3.send(new DeleteObjectCommand({
-            Bucket: bucket,
-            Key: key
-        }));
-        return true;
-    } catch (error) {
-        console.error('AWS Rekognition error:', error);
-        return false;
-    }
+export const deleteFromS3Url = async (url) => {
+    const parsed = new URL(url);
+    const bucket = parsed.hostname.split(".")[0];
+    const key = parsed.pathname.slice(1);
+    console.log(bucket, key)
+    await s3.send(new DeleteObjectCommand({
+        Bucket: bucket,
+        Key: key
+    }));
 };

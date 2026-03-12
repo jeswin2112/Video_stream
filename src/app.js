@@ -6,7 +6,10 @@ import { APP } from './constants/env.constants.js';
 
 const app = express();
 
-app.use(cors());
+app.use(cors({
+    origin: ['https://srs-platform-frontend.vercel.app/', 'http://localhost:3000'],
+    credentials: true
+}));
 app.use(express.json());
 
 // Initialize Database Schema

@@ -38,13 +38,16 @@ export const getVideoById = async (req, res) => {
 
 export const deleteVideo = async (req, res) => {
     try {
+        // const video = await videosService.getVideoById(req.params.id);
         const success = await videosService.deleteVideo(req.params.id);
         if (!success) {
             return res.status(404).json({ error: 'Video not found or already deleted' });
         }
-        await awsService.deleteFromS3();
+        // await awsService.deleteFromS3Url(video.original_url);
+        // console.log(video)
         res.status(200).json({ message: 'Video deleted successfully' });
     } catch (error) {
+        console.log(error)
         res.status(500).json({ error: 'Failed to delete video' });
     }
 };
